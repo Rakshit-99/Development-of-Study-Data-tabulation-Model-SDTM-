@@ -1,0 +1,92 @@
+data empty_dm;
+	length STUDYID $15 DOMAIN $2 USUBJID $25 SUBJID $7 RFSTDTC $16 RFENDTC $16 
+		RFXSTDTC $16 RFXENDTC $16 RFICDTC $16 RFPENDTC $16 DTHDTC $16 DTHFL $2 
+		SITEID $7 BRTHDTC $16 AGE $8 AGEU $10 SEX $2 RACE $80 ARMCD $8 ARM $40 
+		ACTARMCD $8 ACTARM $40 COUNTRY $3;
+	label STUDYID='study identifier' DOMAIN='domain abbreviation' 
+		USUBJID='unique subject identifier' SUBJID='subject identifier for the study' 
+		RFSTDTC='subject reference startdae / time' 
+		RFENDTC='subect reference enddate/time' 
+		RFXSTDTC='Date/Time of first study treatment' 
+		RFXENDTC='Date/Time of Last Study Treatment' 
+		RFICDTC='Date/Time of Informed Consent' 
+		RFPENDTC='Date/Time of End of Participation' DTHDTC='Date/Time of Death' 
+		DTHFL='Subject Death Flag' SITEID='Study Site Identifier' 
+		BRTHDTC='Date/Time of Birth' AGE='Age' AGEU='Age Units' SEX='sex' RACE='race' 
+		ARMCD='Planned Arm Code' ARM='Description of Planned Arm' 
+		ACTARMCD='Actual Arm Code' ACTARM='Description of Actual Arm' 
+		COUNTRY='country';
+		proc format ;
+		value sex
+		1='f'
+		2='M'
+		3='U';
+		value race 
+		1='Black or African'
+		2='ASian'
+		3='White';
+		value arm
+		1='Analgezia HCL 30 mg'
+		2='Placebo';
+		value ARMCD
+		1='ALG123'
+		2='PLACEBO';
+
+	
+		proc sort data=source.dosing out=dosing(keep= subject startdt enddt);
+		by subject startdt enddt;
+		run;
+		
+		data dosing_final ;
+		set work.dosing;
+		format firstdosedt lastdosedt mmddyy10. ;
+		by subject;
+		retain firstdosedt lastdosedt;
+		if first.subject then do ;
+		firstdosedt=.;
+		lastdosedt=.;
+		end;
+		firstdosedt=min(firstdosedt , startdt , enddt);
+		lastdosedt=max(lastdosedt , startdt , enddt);
+		if last.subject;
+		run;
+		  proc sql ;
+		 create table demographic_dosing as ( select a.uniqueid ,a.subject , b.firstdosedt, b.lastdosedt, a.icdate ,
+		 a.lastdoc, a.dob  , a.gender , a.race , a.trt  from source.demographic a join work.dosing_final  b 
+		 on a.subject = b.subject) ;
+		 quit;
+
+ 
+ 
+data sdtm23.dm (keep=STUDYID DOMAIN USUBJID SUBJID RFSTDTC RFENDTC RFXSTDTC 
+		RFXENDTC RFICDTC RFPENDTC DTHDTC DTHFL SITEID BRTHDTC AGE AGEU SEX RACE ARMCD 
+		ARM ACTARMCD ACTARM COUNTRY);
+		set empty_dm
+		demographic_dosing(rename=(race=race_input));
+		STUDYID='XYZ123';
+DOMAIN='DM';
+USUBJID=UNIQUEID;
+SUBJID=Subject;
+RFSTDTC=put(firstdosedt , yymmdd10.);
+RFENDTC=put(lastdosedt , yymmdd10.);
+RFXSTDTC=put(firstdosedt , yymmdd10.);
+RFXENDTC=put(lastdosedt , yymmdd10.);
+RFICDTC=put(icdate , yymmdd10.);
+RFPENDTC=put(lastdoc , yymmdd10.);
+DTHDTC='';
+if DTHDTC = '' THEN  DTHFL='N';
+SITEID='100';
+BRTHDTC=put(dob , yymmdd10.);
+AGE=(firstdosedt - dob )/365.25;
+AGEU='years';
+SEX=put(gender, sex. );
+RACE=put(race_input , race.);
+ARMCD=put(trt , armcd.);
+ARM=put(trt , arm.);
+ACTARMCD=put(trt,armcd.);
+ACTARM=put(trt,arm.);
+COUNTRY='USA';
+run ;
+proc sort data=sdtm23.dm;
+by Studyid USUBJID;
+run;
